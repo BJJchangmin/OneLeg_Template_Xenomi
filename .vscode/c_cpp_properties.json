@@ -5,7 +5,7 @@
       "includePath": [
         "${workspaceFolder}/**",
         "~/mujoco/mujoco-2.2.1/include",
-        "~/mujoco/mujoco-2.2.1/myProject/One_Leg_Template/include"
+        "~/mujoco/mujoco-2.2.1/myProject/One_Leg_Template_Xenomi/include"
       ],
       "compilerPath": "/usr/bin/gcc",
       "cStandard": "${default}",
