@@ -5,206 +5,105 @@
 #include "kinematics.h"
 #include "trajectory.h"
 #include "filter.h"
+#include <mujoco/mujoco.h> //Caution Crash
 
+//전역변수로 Leg_num 있어야함, PID제어기 몇개 인지도 있어야함
 
-int loop_con = 0;
-void controller_init(const mjModel* m, mjData* d, ParamModel* param_model, ParamTuning* param_tuning)
+class controller
 {
-    // RW PD Controller
-    param_tuning->freq_cut_D = 150;
 
-    param_tuning->Kp_pos[0] = 700;
-    param_tuning->Kp_pos[1] = 700;
-
-    param_tuning->Kd_pos[0] = 80;
-    param_tuning->Kd_pos[1] = 80;
-
-    // RWDOB & RWFOB cutoff frequency
-    param_tuning->freq_cut_Qd = 50;
-    param_tuning->freq_cut_Qf = 50;
-
-    param_tuning->delta_default = 0.0001;
-    param_tuning->zeta = 1;
-
-    param_tuning->Ma = 0.25 * param_model->m_trunk; //m_total�� ��� think. mass ���� 
-    param_tuning->Ka = param_tuning->Ma * g / param_tuning->delta_default;
-    param_tuning->Ba = 2 * param_tuning->zeta * sqrt(param_tuning->Ma * param_tuning->Ka);
-    //printf("%f \n", param_tuning->Ka);
-
-    // d->ctrl[0] = m->key_ctrl[0];
-    // d->ctrl[1] = m->key_ctrl[1];
-}
-
-void admittanceCtrl(ParamModel* param_model, ParamTuning* param_tuning, StateModel* state_model, int flag)
-{
+private:
     
-    double c1 = 4 * param_tuning->Ma_new + 2 * param_tuning->Ba_new * Ts + param_tuning->Ka_new * pow(Ts, 2);
-    double c2 = -8 * param_tuning->Ma_new + 2 * param_tuning->Ka_new * pow(Ts, 2);
-    double c3 = 4 * param_tuning->Ma_new - 2 * param_tuning->Ba_new * Ts + param_tuning->Ka_new * pow(Ts, 2);
-   
+    // Pos_PID
+    Vector2d Kp_pos; // [Leg_num][dimension] ->ex) [RL][r,theta]
+    Vector2d Kd_pos;
+    double cut_off_D_pos;
+    Vector2d PID_output_pos;
+    Vector2d error_pos;
+    Vector2d error_old_pos;
+    Vector2d error_dot_pos;
+    Vector2d error_dot_old_pos;
+
+    // Vel_PID
+    double Kp_vel[NDOF_LEG]; // [Leg_num][dimension] ->ex) [RL][r,theta]
+    double Kd_vel[NDOF_LEG];
+    double cut_off_D_vel;
+    double PID_output_vel[NDOF_LEG];
+    double error_vel[NDOF_LEG];
+    double error_old_vel[NDOF_LEG];
+    double error_dot_vel[NDOF_LEG];
+    double error_dot_old_vel[NDOF_LEG];
+
+    //Admittance
+    double ad_M;
+    double ad_B;
+    double ad_K;
+    double deltaPos[NDOF_LEG];
+    double deltaPos_old[NDOF_LEG];
+    double deltaPos_old2[NDOF_LEG];
+
+    //DOB
+    Vector2d lhs_dob;
+    Vector2d lhs_dob_old;
+    Vector2d rhs_dob;
+    Vector2d rhs_dob_old;
+    double lhs_dob_LPF[NDOF_LEG];
+    double lhs_dob_LPF_old[NDOF_LEG];
+    double rhs_dob_LPF[NDOF_LEG];
+    double rhs_dob_LPF_old[NDOF_LEG];
+    Vector2d tauDist_hat;
+    double cut_off_dob;
+
+    //FOB
+    Vector2d rhs_fob;
+    Vector2d rhs_fob_old;
+    Vector2d lhs_fob_LPF;
+    Vector2d lhs_fob_LPF_old;
+    Vector2d rhs_fob_LPF;
+    Vector2d rhs_fob_LPF_old;
+    Vector2d tauExt_hat;
+    Vector2d forceExt_hat;
+    Vector2d forceExt_hat_old;
+    Vector2d forceExt_hat_old2; 
+    double cut_off_fob;
+
+
+
+public:
+    controller(); //생성자
+    ~controller(); //소멸자
     
-    state_model->deltaPos[0] =
-        (pow(Ts, 2) * state_model->forceExt_hat[0] + 2 * pow(Ts, 2) * state_model->forceExt_hat_old[0] +
-            pow(Ts, 2) * state_model->forceExt_hat_old2[0] - c2 * state_model->deltaPos_old[0] - c3 * state_model->deltaPos_old2[0]) / c1;
-    //printf("delta : %f, fxR : %f, fxR_old : %f, fxR_old2 : %f \n", state_model->deltaPos[0], state_model->forceExt_hat[0], state_model->forceExt_hat_old[0], state_model->forceExt_hat_old2[0]);
+    void pid_gain_pos(double kp, double kd, double cut_off_pos);
+    void pid_gain_vel(double kp, double kd, double cut_off_vel);
+    Vector2d PID_pos(StateModel_* state_model);
+    void PID_vel(StateModel_* state_model);
+    void admittanceCtrl(StateModel_* state_model, double m, double b, double k, int flag);
+    void DOBRW(StateModel_* state_model, double cut_off ,int flag);
+    void FOBRW(StateModel_* state_model, double cut_off);
+    void ctrlupdate(); // 이걸 사용할지에 대해서 생각해보기
 
-        if (flag == true)
-            state_model->posRW_ref[0] = state_model->posRW_ref[0] + state_model->deltaPos[0];
+    //PID 어떻게 짜줄 것인지 설계 해줘야한다.
     
 
+};
+
+
+
+// // Coriolis & Gravity -> 이 항들은 kinematics로 옮겨야함
+    // double h[NDOF_LEG] = { 0 }, h_old[NDOF_LEG] = { 0 };
+
+    // h[0] = -param_model->m_shank * param_model->d_shank * param_model->L * sin(state_model->q[1]) * pow(state_model->qdot_bi[1], 2)
+    //     - g * (param_model->m_thigh * param_model->d_thigh + param_model->m_shank * param_model->L) * cos(state_model->q_bi[0]);
+    // h_old[0] = -param_model->m_shank * param_model->d_shank * param_model->L * sin(state_model->q_old[1]) * pow(state_model->qdot_bi_old[1], 2)
+    //     - g * (param_model->m_thigh * param_model->d_thigh + param_model->m_shank * param_model->L) * cos(state_model->q_bi_old[0]);
+
+    // h[1] = param_model->m_shank * param_model->d_shank * param_model->L * sin(state_model->q[1]) * pow(state_model->qdot_bi[0], 2)
+    //     - g * param_model->m_shank * param_model->d_shank * cos(state_model->q_bi[1]);
+    // h_old[1] = param_model->m_shank * param_model->d_shank * param_model->L * sin(state_model->q_old[1]) * pow(state_model->qdot_bi_old[0], 2)
+    //     - g * param_model->m_shank * param_model->d_shank * cos(state_model->q_bi_old[1]);
     
-} // Admittance control
 
-void posFeedbackPD(ParamTuning* param_tuning, StateModel* state_model,double t)
-{
-    
-    for (int i = 0; i < NDOF_LEG; i++)
-    {
-        state_model->error_pos[i] = state_model->posRW_ref[i] - state_model->posRW[i];
-        state_model->error_pos_old[i] = state_model->posRW_ref_old[i] - state_model->posRW_old[i];
-        
-        state_model->error_dot_pos[i] = tustin_derivative(state_model->error_pos[i], state_model->error_pos_old[i], state_model->error_dot_pos_old[i], param_tuning->freq_cut_D);
-        
-        state_model->ctrl_input_RW[i] = param_tuning->Kp_pos[i] * state_model->error_pos[i] + param_tuning->Kd_pos[i] * state_model->error_dot_pos[i];
-    }
-    
-} // negative position PID feedback
+    // //h[0] = h[0] - h[1];
 
-void velFeedbackPD(ParamTuning* param_tuning, StateModel* state_model)
-{
-    for (int i = 0; i < NDOF_LEG; i++)
-    {
-        state_model->error_vel[i] = state_model->velRW_ref[i] - state_model->velRW[i];
-        state_model->error_vel_old[i] = state_model->velRW_ref_old[i] - state_model->velRW_old[i];
-        state_model->error_dot_vel_old[i] = state_model->error_dot_vel[i];
-
-        state_model->error_dot_vel[i] = tustin_derivative(state_model->error_vel[i], state_model->error_vel_old[i], state_model->error_dot_vel_old[i], param_tuning->freq_cut_D);
-
-        state_model->ctrl_input_RW[i] = param_tuning->Kp_vel[i] * state_model->error_vel[i] + param_tuning->Kd_vel[i] * state_model->error_dot_vel[i];
-    }
-} // negative velocity PID feedback
-
-void distObserverRW(ParamModel* param_model, ParamTuning* param_tuning, StateModel* state_model, int flag)
-{
-    double matA[NDOF_LEG * NDOF_LEG] = { 0 };
-    matA[0] = 1;
-    matA[1] = -1;
-    matA[2] = -1;
-    matA[3] = 1;
-
-    double matB[NDOF_LEG * NDOF_LEG] = { 0 };
-    matB[0] = 1;
-    matB[1] = 1;
-    matB[2] = 1;
-    matB[3] = 1;
-
-    double matC[NDOF_LEG * NDOF_LEG] = { 0 };
-    mju_add(matC, matA, matB, 4);
-    //printf("%f %f\n", matC[0], matC[1]);
-    //printf("%f %f\n\n", matC[2], matC[3]);
-
-    double matD[NDOF_LEG * NDOF_LEG] = { 0 };
-    mju_scl(matD, matA, 0.5 * param_model->JzzR_thigh, 4);
-
-    double matE[NDOF_LEG * NDOF_LEG] = { 0 };
-    mju_scl(matE, matB, 0.5 * param_model->JzzR_shank, 4);
-
-    double matF[NDOF_LEG * NDOF_LEG] = { 0 };
-    mju_add(matF, matD, matE, 4);
-
-    double lhs_dob[NDOF_LEG] = { 0 }, lhs_dob_old[NDOF_LEG] = { 0 };
-    double rhs_dob[NDOF_LEG] = { 0 }, rhs_dob_old[NDOF_LEG] = { 0 };
-    //printf("%f %f \n\n", state_model->tau_bi[0], state_model->tau_bi_old[0]);
-
-    mju_mulMatVec(lhs_dob, matC, state_model->tau_bi, 2, 2);
-    mju_mulMatVec(lhs_dob_old, matC, state_model->tau_bi_old, 2, 2);
-
-    mju_mulMatVec(rhs_dob, matF, state_model->qddot_bi_tustin, 2, 2);
-    mju_mulMatVec(rhs_dob_old, matF, state_model->qddot_bi_tustin_old, 2, 2);
-
-    if (flag == 1)
-    {
-        for (int i = 0; i < NDOF_LEG; i++)
-        {
-            state_model->lhs_dob_LPF[i] = lowpassfilter(lhs_dob[i], lhs_dob_old[i], state_model->lhs_dob_LPF_old[i], param_tuning->freq_cut_Qd);
-            state_model->rhs_dob_LPF[i] = lowpassfilter(rhs_dob[i], rhs_dob_old[i], state_model->rhs_dob_LPF_old[i], param_tuning->freq_cut_Qd);
-            state_model->tauDist_hat[i] = -state_model->rhs_dob_LPF[i] + state_model->lhs_dob_LPF[i];
-        }
-        mju_scl(state_model->tauDist_hat, state_model->tauDist_hat, 0.5, NDOF_LEG);
-        //printf("%f %f \n", tauDist_hat[0], tauDist_hat[1]);
-        mju_add(state_model->tau_bi, state_model->tau_bi, state_model->tauDist_hat, NDOF_LEG);
-    }
-    else
-    {
-        for (int i = 0; i < NDOF_LEG; i++)
-        {
-            state_model->tauDist_hat[i] = 0;
-        }
-    }
-} // Rotating Workspace DOB
-
-void forceObserverRW(mjData* d, ParamModel* param_model, ParamTuning* param_tuning, StateModel* state_model)
-{
-    // Coriolis & Gravity 
-    double h[NDOF_LEG] = { 0 }, h_old[NDOF_LEG] = { 0 };
-
-    h[0] = -param_model->m_shank * param_model->d_shank * param_model->L * sin(state_model->q[1]) * pow(state_model->qdot_bi[1], 2)
-        - g * (param_model->m_thigh * param_model->d_thigh + param_model->m_shank * param_model->L) * cos(state_model->q_bi[0]);
-    h_old[0] = -param_model->m_shank * param_model->d_shank * param_model->L * sin(state_model->q_old[1]) * pow(state_model->qdot_bi_old[1], 2)
-        - g * (param_model->m_thigh * param_model->d_thigh + param_model->m_shank * param_model->L) * cos(state_model->q_bi_old[0]);
-
-    h[1] = param_model->m_shank * param_model->d_shank * param_model->L * sin(state_model->q[1]) * pow(state_model->qdot_bi[0], 2)
-        - g * param_model->m_shank * param_model->d_shank * cos(state_model->q_bi[1]);
-    h_old[1] = param_model->m_shank * param_model->d_shank * param_model->L * sin(state_model->q_old[1]) * pow(state_model->qdot_bi_old[0], 2)
-        - g * param_model->m_shank * param_model->d_shank * cos(state_model->q_bi_old[1]);
-    //printf("%f %f \n", param_model->MatInertia_bi[0], param_model->MatInertia_bi[1]);
-    //printf("%f %f \n\n", param_model->MatInertia_bi[2], param_model->MatInertia_bi[3]);
-
-    //h[0] = h[0] - h[1];
-
-    double rhs_fob[NDOF_LEG] = { 0 }, rhs_fob_old[NDOF_LEG] = { 0 };
-
-    mju_mulMatVec(rhs_fob_old, param_model->MatInertia_bi, state_model->qddot_bi_tustin_old, 2, 2);
-    mju_mulMatVec(rhs_fob, param_model->MatInertia_bi, state_model->qddot_bi_tustin, 2, 2);
-
-    //mju_sub(rhs_fob_old, rhs_fob_old, h_old, NDOF_LEG);
-    //mju_sub(rhs_fob, rhs_fob, h, NDOF_LEG);
-
-    //mju_add(rhs_fob_old, rhs_fob_old, h_old, NDOF_LEG);
-    //mju_add(rhs_fob, rhs_fob, h, NDOF_LEG);
-
-    for (int i = 0; i < NDOF_LEG; i++)
-    {
-        state_model->lhs_fob_LPF[i] = lowpassfilter(state_model->tau_bi[i], state_model->tau_bi_old[i], state_model->lhs_fob_LPF_old[i], param_tuning->freq_cut_Qf);
-        state_model->rhs_fob_LPF[i] = lowpassfilter(rhs_fob[i], rhs_fob_old[i], state_model->rhs_fob_LPF_old[i], param_tuning->freq_cut_Qf);
-
-        state_model->tauExt_hat[i] = state_model->rhs_fob_LPF[i] - state_model->lhs_fob_LPF[i];
-        //lowpassfilter(est_torque_ext[i], est_torque_ext_old[i], &torque_LPF[i], &torque_LPF_old[i], cutoff_freq);
-    }
-    //ó�� 8���� Ȯ���ϱ� ���ؼ� �ִ� �ڵ�
-    while (loop_con< 8) {
-        //printf("%f  %f\n", state_model->tauExt_hat[0], state_model->tauExt_hat[1]);
-        //printf(" %f \n", state_model->q[1]); //q[1]�� 0���� ���°� ������ ��� 0�� ������ Ȯ���غ�����
-        
-        break;
-    }
-    
-    mju_mulMatVec(state_model->forceExt_hat, state_model->jacbRW_trans_inv, state_model->tauExt_hat, 2, 2);
-    
-    while (loop_con < 80000) {
-        state_model->forceExt_hat[0] = 0;
-        state_model->forceExt_hat[1] = 0;
-        break;
-    }
-    
-      
-
-    loop_con += 1;
-    //printf("fxR_hat : %f, fyR_hat : %f \n", lhs_fob_LPF[0], lhs_fob_LPF[1]);
-    //printf("fxR_hat : %f, fyR_hat : %f \n", rhs_fob[0], rhs_fob[1]); 
-    //printf("fxR_hat : %f, fyR_hat : %f \n\n", rhs_fob_LPF[0], rhs_fob_LPF[1]);
-    //printf("fxR_hat : %f, fyR_hat : %f \n", tauExt_hat[0], tauExt_hat[1]);
-    //printf("fxR_hat : %f, fyR_hat : %f \n", forceExt_hat[0], forceExt_hat[1]);
-} // Rotating WorkspaceForce Observer
 
 #endif // !__CONTROLLER_H__

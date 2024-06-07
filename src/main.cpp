@@ -12,6 +12,8 @@
 #include "controller.h"
 #include "dataLogging.h"
 #include "animation.h"
+#include "kinematics.h"
+#include "trajectory.h"
 
 
 mjvFigure figPosRW;         // RW position tracking plot
@@ -19,13 +21,11 @@ mjvFigure figFOB;           // RWFOB GRF estimation plot
 mjvFigure figTrunkState;    // Trunk state plot
 
 double simEndtime = 100;	// Simulation End Time
+StateModel_  state_Model_FL;
 
-ParamModel  param_Model_FL;
-ParamTuning param_Tuning_FL;
-StateModel  state_Model_FL;
-
-ParamJump   param_Jump;
-ParamSquat  param_Squat;
+controller ctrl_FL;
+kinematics kin_FL;
+trajectory tra_FL;
 
 
 
@@ -34,22 +34,18 @@ void mycontroller(const mjModel* m, mjData* d)
 {
    
     /* Controllers */
-    int flag_DOB = 1;           // flag for switching ON/OFF RWDOB
+    int flag_DOB = 0;           // flag for switching ON/OFF RWDOB
     int flag_admitt = 0;        // flag for switching ON/OFF admittance control
     double time_run = d->time;
     
     
     //admittanceCtrl(&param_Model_FL, &param_Tuning_FL, &state_Model_FL, flag_admitt);    // Admittance control
-
-    posFeedbackPD(&param_Tuning_FL, &state_Model_FL,d->time);       // RW position feedback
-
-    mju_mulMatVec(state_Model_FL.tau_bi, state_Model_FL.jacbRW_trans, state_Model_FL.ctrl_input_RW, 2, 2);  // Jacobian transpose for joint torque implementation
     
-    state_Model_FL.tau_bi[0] = state_Model_FL.tau_bi[0] + state_Model_FL.tau_ff[0];
-    state_Model_FL.tau_bi[1] = state_Model_FL.tau_bi[1] + state_Model_FL.tau_ff[1];
+    state_Model_FL.tau_bi = state_Model_FL.jacbRW_trans * ctrl_FL.PID_pos(&state_Model_FL); // RW position feedback
+    //Feedforward in here
 
-    distObserverRW(&param_Model_FL, &param_Tuning_FL, &state_Model_FL, flag_DOB);// Rotating Workspace Disturbance Observer (RWDOB)
-    forceObserverRW(d, &param_Model_FL, &param_Tuning_FL, &state_Model_FL); // Rotating Workspace Force Observer (RWFOB)
+    ctrl_FL.DOBRW(&state_Model_FL, 150, flag_DOB); // Rotating Workspace Disturbance Observer (RWDOB)
+    ctrl_FL.FOBRW(&state_Model_FL, 150); // Rotating Workspace Force Observer (RWFOB)
     
    // Torque input
     d->ctrl[0] = state_Model_FL.tau_bi[0] + state_Model_FL.tau_bi[1] ;
@@ -126,10 +122,12 @@ int main(int argc, const char** argv)
 
     // Initialization
     mju_copy(d->qpos, m->key_qpos + 0 * m->nq, m->nq);
-    model_param_cal(m, d, &param_Model_FL, &state_Model_FL);
-    state_init(m, d, &state_Model_FL, &param_Model_FL);
+    kin_FL.model_param_cal(m, d, &state_Model_FL); // state init is before. Caution Error. 
+    
+    //Because of constructure. 
+    //kin_FL.state_init(m, d, &state_Model_FL, &param_Model_FL);
     //trajectory_init(&param_Squat, &param_Jump, &param_Tuning_FL);
-    controller_init(m, d, &param_Model_FL, &param_Tuning_FL);
+    //controller_init(m, d, &param_Model_FL, &param_Tuning_FL);
     
     // custom controller
     mjcb_control = mycontroller;
@@ -155,35 +153,22 @@ int main(int argc, const char** argv)
             
             if (cmd_motion_type == 0)   // Squat
             {
-                trajectory_Squat(d->time, &param_Model_FL, &param_Squat, &state_Model_FL);
+                tra_FL.Squat(d->time, &state_Model_FL);
             }
-            else if (cmd_motion_type == 1)  // Jumping
-            {
-                trajectory_Jumping_Noadmittance(d->time, &param_Model_FL, &param_Tuning_FL, &param_Jump, &state_Model_FL, mode_admitt);
-
-            }
-            else if (cmd_motion_type == 2)  // Jumping
-            {
-                trajectory_Landing_tau(d->time, &param_Model_FL, &param_Tuning_FL, &param_Jump, &state_Model_FL, mode_admitt);
-            }
-            
             else
             {  
-                trajectory_Hold(&state_Model_FL);  // Hold stance
+                tra_FL.Hold(&state_Model_FL);  // Hold stance
                 
             }
 
-            printf("ref: %f \n", state_Model_FL.posRW_ref[1]);
-
-            sensor_measure(m, d, &state_Model_FL, &param_Tuning_FL); // get joint sensor data & calculate biarticular angles
-            model_param_cal(m, d, &param_Model_FL, &state_Model_FL); // calculate model parameters
-            jacobianRW(&param_Model_FL, &state_Model_FL);            // calculate RW Jacobian
-            fwdKinematics_cal(&param_Model_FL, &state_Model_FL);     // calculate RW Kinematics
+            kin_FL.sensor_measure(m, d, &state_Model_FL); // get joint sensor data & calculate biarticular angles
+            kin_FL.model_param_cal(m, d,&state_Model_FL); // calculate model parameters
+            kin_FL.jacobianRW(&state_Model_FL);            // calculate RW Jacobian
+            kin_FL.fwdKinematics_cal(&state_Model_FL);     // calculate RW Kinematics
            
             mj_step(m, d);
            
-           
-            state_update(&state_Model_FL); 
+            kin_FL.state_update(&state_Model_FL); 
 
         }
 

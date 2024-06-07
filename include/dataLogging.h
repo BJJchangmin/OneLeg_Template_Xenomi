@@ -30,7 +30,7 @@ void init_save_data()
     fprintf(fid, "\n");
 }
 
-void save_data(const mjModel* m, mjData* d, StateModel* state_model)
+void save_data(const mjModel* m, mjData* d, StateModel_* state_model)
 {
     // This function is called at a set frequency,put data here.
     // Data here should correspond to headers in init_save_data()
