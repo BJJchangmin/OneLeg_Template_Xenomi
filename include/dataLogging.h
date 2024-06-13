@@ -48,12 +48,12 @@ void save_data(const mjModel* m, mjData* d, StateModel_* state_model)
     fprintf(fid, "%f, ", d->time);
     
     fprintf(fid, "%f, %f, %f, %f, ", state_model->posRW_ref[0], state_model->posRW_ref[1], state_model->posRW[0], state_model->posRW[1]);
-    fprintf(fid, "%f, %f ", state_model->tau_bi[0], state_model->tau_bi[1]);
+    fprintf(fid, "%f, %f", state_model->tau_bi[0], state_model->tau_bi[1]);
 
     
     
     // // Don't remove the newline
-    // fprintf(fid, "\n");
+    fprintf(fid, "\n");
 
 
 }

@@ -78,7 +78,7 @@ public:
     Vector2d PID_pos(StateModel_* state_model);
     void PID_vel(StateModel_* state_model);
     void admittanceCtrl(StateModel_* state_model, double m, double b, double k, int flag);
-    void DOBRW(StateModel_* state_model, double cut_off ,int flag);
+    Vector2d DOBRW(StateModel_* state_model, double cut_off ,int flag);
     void FOBRW(StateModel_* state_model, double cut_off);
     void ctrl_update(); // 이걸 사용할지에 대해서 생각해보기
     

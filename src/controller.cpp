@@ -149,49 +149,32 @@ void controller::PID_vel(StateModel_* state_model)
     }
 }; // negative velocity PID feedback
 
-void controller::admittanceCtrl(StateModel_* state_model, double m , double b, double k, int flag)
+void controller::admittanceCtrl(StateModel_* state_model, double omega_n , double zeta, double k, int flag)
 {
     // 현재 omega_n, zeta, k 로 tunning 하고 있는데, 변환식을 통해 아래에 적어주면 된다
-    ad_M = m;
-    ad_B = b;
+    ad_M = k/(pow(omega_n,2));
+    ad_B = 2*zeta*k/omega_n;
     ad_K = k;
 
     double c1 = 4 * ad_M + 2 * ad_B * Ts + ad_K * pow(Ts, 2);
     double c2 = -8 * ad_M + 2 * ad_K * pow(Ts, 2);
     double c3 = 4 * ad_M - 2 * ad_B * Ts + ad_K * pow(Ts, 2);
    
-    //Delta pos는? force_hat? -> state_model에 있어야하나?
     deltaPos[0] =
         (pow(Ts, 2) * forceExt_hat[0] + 2 * pow(Ts, 2) * forceExt_hat_old[0] +
             pow(Ts, 2) * forceExt_hat_old2[0] - c2 * deltaPos_old[0] - c3 * deltaPos_old2[0]) / c1;
+
+    //cout<< " deltaPos: " << deltaPos[0]<< endl; 
 
         if (flag == true)
             state_model->posRW_ref[0] = state_model->posRW_ref[0] + deltaPos[0];
 };
 
-void controller::DOBRW(StateModel_* state_model, double cut_off ,int flag)
+Vector2d controller::DOBRW(StateModel_* state_model, double cut_off ,int flag)
 {
     cut_off_dob = cut_off;
-    
-    //printf(" tau = %f ,%f \n", state_model->qddot_bi_tustin[0],state_model->qddot_bi_tustin[1]);
     lhs_dob = state_model->tau_bi;
     rhs_dob = state_model->Lamda_nominal_DOB * state_model->qddot_bi_tustin;
-    // printf(" tau_bi = %f ,%f \n", state_model->tau_bi[0],state_model->tau_bi[1]);
-    // printf(" qddot_bi_tustin = %f ,%f \n", state_model->qddot_bi_tustin[0],state_model->qddot_bi_tustin[1]);
-    // printf(" Lamda_nominal_DOB(0) = %f ,%f \n", state_model->Lamda_nominal_DOB(0,0),state_model->Lamda_nominal_DOB(0,1));
-    // printf(" Lamda_nominal_DOB(1) = %f ,%f \n", state_model->Lamda_nominal_DOB(1,0),state_model->Lamda_nominal_DOB(1,1));
-    
-    if (state_model->time < 0.00001)
-    {
-        // printf(" tau_bi = %f ,%f \n", state_model->tau_bi[0],state_model->tau_bi[1]);
-        // printf(" qddot_bi_tustin = %f ,%f ", state_model->qddot_bi_tustin[0],state_model->qddot_bi_tustin[1]);
-        // printf(" qddot_bi = %f ,%f \n", state_model->qddot_bi[0],state_model->qddot_bi[1]);
-        //printf(" Lamda_nominal_DOB(0) = %f ,%f ", state_model->Lamda_nominal_DOB(0,0),state_model->Lamda_nominal_DOB(0,1));
-        //printf(" Lamda_nominal_DOB(1) = %f ,%f \n", state_model->Lamda_nominal_DOB(1,0),state_model->Lamda_nominal_DOB(1,1));
-        //printf("rhs_dob: %f, rhs_dob_old: %f, rhs_dob_LPF: %f, rhs_dob_LPF_old: %f, cut_off_dob: %f\n", rhs_dob[0], rhs_dob_old[0], rhs_dob_LPF[0],rhs_dob_LPF_old[0], cut_off_dob);
-        //printf("lhs_dob: %f, lhs_dob_old: %f, lhs_dob_LPF: %f, lhs_dob_LPF_old: %f, cut_off_dob: %f\n", lhs_dob[0], lhs_dob_old[0], lhs_dob_LPF[0],lhs_dob_LPF_old[0], cut_off_dob);
-
-    }
 
     if (flag == true)
     {
@@ -199,27 +182,17 @@ void controller::DOBRW(StateModel_* state_model, double cut_off ,int flag)
         {
             lhs_dob_LPF[i] = lowpassfilter(lhs_dob[i], lhs_dob_old[i], lhs_dob_LPF_old[i], cut_off_dob); 
             rhs_dob_LPF[i] = lowpassfilter(rhs_dob[i], rhs_dob_old[i], rhs_dob_LPF_old[i], cut_off_dob); 
-            // lhs_dob_LPF[i] = Highpassfilter(lhs_dob[i], lhs_dob_old[i], , cut_off_dob); 
-            // //rhs_dob_LPF[i] = Highpassfilter(rhs_dob[i], rhs_dob_old[i], 0, cut_off_dob);
-            // rhs_dob_LPF[i] = (Ts * (rhs_dob[i] + rhs_dob_old[i])- (Ts - 2 * time_const)*rhs_dob_LPF_old[i] ) / (Ts + 2 * time_const); //
+
             tauDist_hat[i] = lhs_dob_LPF[i] - rhs_dob_LPF[i];
         }
-        //printf("rhs_dob: %f, rhs_dob_old: %f, rhs_dob_LPF_old: %f, time_const: %f\n", rhs_dob[0], rhs_dob_old[0], rhs_dob_LPF_old[0], time_const);
-        //printf(" rhs_dob = %f ,%f \n", rhs_dob[0],rhs_dob[1]);
-        //printf(" rhs_dob_old = %f ,%f \n", rhs_dob_old[0],rhs_dob_old[1]);
-        //printf(" rhs_dob_LPF = %f ,%f \n", rhs_dob_LPF[0],rhs_dob_LPF[1]);
-        //printf(" rhs_dob_LPF_old = %f ,%f \n", rhs_dob_LPF_old[0],rhs_dob_LPF_old[1]);
-        // printf(" cut_off_dob = %f \n", cut_off_dob);
-
-
     }
     else
     {
         for (int i = 0; i < NDOF_LEG; i++)
             tauDist_hat[i] = 0;
     }
-    printf(" tauDist_hat = %f ,%f \n", tauDist_hat[0],tauDist_hat[1]);
-    state_model->tau_bi = state_model->tau_bi + tauDist_hat;
+    
+    return tauDist_hat;
 
 }; // Rotating Workspace DOB
 

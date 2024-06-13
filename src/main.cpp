@@ -33,33 +33,29 @@ void mycontroller(const mjModel* m, mjData* d)
    
     /* Controllers */
     int flag_DOB = 1;           // flag for switching ON/OFF RWDOB
-    int flag_admitt = 0;        // flag for switching ON/OFF admittance control
+    int flag_admitt = 1;        // flag for switching ON/OFF admittance control
     double time_run = d->time;
     
+    //Admittance Control
+    ctrl_FL.admittanceCtrl(&state_Model_FL,5,2,5000, flag_admitt); //parameter(omega_n,zeta,k)
     
-    //admittanceCtrl(&param_Model_FL, &param_Tuning_FL, &state_Model_FL, flag_admitt);    // Admittance control
+    // PID Control
     ctrl_FL.pid_gain_pos(200, 10, 150); //(kp,kd,freq)
     state_Model_FL.tau_bi = state_Model_FL.jacbRW_trans * ctrl_FL.PID_pos(&state_Model_FL); // RW position feedback
     
-    //printf(" tau = %f ,%f \n", state_Model_FL.tau_bi[0], state_Model_FL.tau_bi_old[0]); 
-    //Feedforward in here
-    if (d->time > 0.0003)
-    {
-    }
-
-    ctrl_FL.DOBRW(&state_Model_FL, 150, flag_DOB);// Rotating Workspace Disturbance Observer (RWDOB)
-
-    //printf(" tau = %f ,%f \n", state_Model_FL.Lamda_nominal_DOB(0,0), state_Model_FL.Lamda_nominal_DOB(0,1));
-    //printf(" tau = %f ,%f \n", state_Model_FL.Lamda_nominal_DOB(1,0), state_Model_FL.Lamda_nominal_DOB(1,1));
-    ctrl_FL.FOBRW(&state_Model_FL, 30); // Rotating Workspace Force Observer (RWFOB)
+    // DOB control
+    state_Model_FL.tau_bi = state_Model_FL.tau_bi + ctrl_FL.DOBRW(&state_Model_FL, 150, flag_DOB);
+    
+    // Force Observer
+    ctrl_FL.FOBRW(&state_Model_FL, 100); // Rotating Workspace Force Observer (RWFOB)
     
    // Torque input Biarticular
     d->ctrl[0] = state_Model_FL.tau_bi[0] + state_Model_FL.tau_bi[1] ;
-    d->ctrl[1] = state_Model_FL.tau_bi[1];// + 0.3*sin(time_run);
+    d->ctrl[1] = state_Model_FL.tau_bi[1];
         
     
 
-    if (loop_index % data_frequency == 0) {     // loop_index�� data_frequency�� ���� �������� 0�̸� �����͸� ����
+    if (loop_index % data_frequency == 0) {  
         save_data(m, d, &state_Model_FL);
     }
     loop_index += 1;
@@ -127,29 +123,19 @@ int main(int argc, const char** argv)
 
     
     // Initialization
-    mju_copy(d->qpos, m->key_qpos + 0 * m->nq, m->nq);
-    // d->qpos[1] = pi/4;
-    // d->qpos[2] = pi/2;
-    // d->qpos[1] = pi/2;
-    // d->qpos[2] = pi/4;
+    mju_copy(d->qpos, m->key_qpos + 0 * m->nq, m->nq); // 얘가 젤 처음에 와야함
+    //d->qpos[1] = 0.546812;
+    //d->qpos[2] = 2.59478;
     
-    //printf(" jacbRW_trans(1) = %f ,%f \n", state_Model_FL.q[1] ,state_Model_FL.q[1] );
-    //printf(" jacbRW_trans(1) = %f ,%f \n", state_Model_FL.jacbRW(1,0),state_Model_FL.jacbRW(1,1));
     
     
     kin_FL.model_param_cal(m, d, &state_Model_FL); // state init is before. Caution Error.
-    kin_FL.state_init(m,d, &state_Model_FL);
-    // printf(" Lamda_nominal_DOB(1) = %f ,%f \n", state_Model_FL.Lamda_nominal_DOB(0,0),state_Model_FL.Lamda_nominal_DOB(0,1)); 
-    // printf(" Lamda_nominal_DOB(1) = %f ,%f \n", state_Model_FL.Lamda_nominal_DOB(1,0),state_Model_FL.Lamda_nominal_DOB(1,1));
-    
-    //Because of constructure. 
-    //kin_FL.state_init(m, d, &state_Model_FL, &param_Model_FL);
-    //trajectory_init(&param_Squat, &param_Jump, &param_Tuning_FL);
-    //controller_init(m, d, &param_Model_FL, &param_Tuning_FL);
+    kin_FL.state_init(m,d, &state_Model_FL); 
     
     // custom controller
     mjcb_control = mycontroller;
-    //printf(" %f  %f \n", d->ctrl[0], d->ctrl[1]);
+    
+
     /***************** Simulation Loop *****************/
     // use the first while condition if you want to simulate for a period.
     int i = 0;
@@ -166,7 +152,7 @@ int main(int argc, const char** argv)
         while (d->time - simstart < 1.0 / 60.0)
         {
             /* Trajectory Generation */
-            int cmd_motion_type = 0;
+            int cmd_motion_type = 1;
             int mode_admitt = 1;
             
             if (cmd_motion_type == 0)   // Squat
@@ -180,7 +166,6 @@ int main(int argc, const char** argv)
             }
             
             kin_FL.sensor_measure(m, d, &state_Model_FL); // get joint sensor data & calculate biarticular angles
-
             kin_FL.model_param_cal(m, d,&state_Model_FL); // calculate model parameters
             kin_FL.jacobianRW(&state_Model_FL);            // calculate RW Jacobian
             
@@ -199,11 +184,6 @@ int main(int argc, const char** argv)
            
             kin_FL.state_update(&state_Model_FL);
             ctrl_FL.ctrl_update();
-            
-            // Vector2d check_old; 
-            // Vector2d check = lowpassfilter(state_Model_FL.tau_bi,state_Model_FL.tau_bi_old,check_old,100);
-            // check_old = check;
-            // printf("check: %f \n", check[0]);
 
         }
 
