@@ -1,35 +1,65 @@
 #include "controller.h"
-
+#include <iostream>
+using namespace std;
 
 
 controller::controller()
 {
-    // sate_model에 있다가 controller class로 이동한 얘들은 전부 초기화를 여기서 해줘야하고 함수 내에서 update 해줘야함. PID에서는 없을 거 같고 DOB,FOB, Admittance에 있을 거 같음.
-    // RW PD Controller
-    // param_tuning->freq_cut_D = 150;
+    for (int i = 0; i < NDOF_LEG; i++)
+    {
+        // Pos PID
+        Kp_pos[i] = 0.0;
+        Kd_pos[i] = 0.0;
 
-    // param_tuning->Kp_pos[0] = 700;
-    // param_tuning->Kp_pos[1] = 700;
+        error_pos[i] = 0.0;
+        error_old_pos[i] = error_pos[i];
+        error_dot_pos[i] = 0.0;
+        error_dot_old_pos[i] = error_dot_pos[i];
+        PID_output_pos[i] = 0;
 
-    // param_tuning->Kd_pos[0] = 80;
-    // param_tuning->Kd_pos[1] = 80;
+        // Vel PID
+        Kp_vel[i] = 0.0;
+        Kd_vel[i] = 0.0;
 
-    // // RWDOB & RWFOB cutoff frequency
-    // param_tuning->freq_cut_Qd = 50;
-    // param_tuning->freq_cut_Qf = 50;
+        error_vel[i] = 0.0;
+        error_old_vel[i] = error_vel[i];
+        error_dot_vel[i] = 0.0;
+        error_dot_old_vel[i] = error_dot_vel[i];
+        PID_output_vel[i] = 0;
 
-    // param_tuning->delta_default = 0.0001;
-    // param_tuning->zeta = 1;
+        //Admittance
+        deltaPos[i] = 0.0;
+        deltaPos_old[i] = deltaPos[i];
+        deltaPos_old2[i] = deltaPos_old[i];
 
-    // param_tuning->Ma = 0.25 * param_model->m_trunk; //m_total�� ��� think. mass ���� 
-    // param_tuning->Ka = param_tuning->Ma * g / param_tuning->delta_default;
-    // param_tuning->Ba = 2 * param_tuning->zeta * sqrt(param_tuning->Ma * param_tuning->Ka);
+        //RWDOB
+        rhs_dob[i] = 0.0;
+        rhs_dob_old[i] = rhs_dob[i];
+        lhs_dob[i] = 0.0;
+        lhs_dob_old[i] = lhs_dob[i];
+        lhs_dob_LPF[i] = 0.0;
+        lhs_dob_LPF_old[i] = lhs_dob_LPF[i];
+        rhs_dob_LPF[i] = 0.0;
+        rhs_dob_LPF_old[i] = rhs_dob_LPF[i];
+        tauDist_hat[i] = 0.0;
 
-    // double lhs_dob[NDOF_LEG] = { 0 }, lhs_dob_old[NDOF_LEG] = { 0 };
-    // double rhs_dob[NDOF_LEG] = { 0 }, rhs_dob_old[NDOF_LEG] = { 0 };
+        //RWFOB
+        rhs_fob[i] = 0.0;
+        rhs_fob_old[i] = rhs_fob[i];
+        lhs_fob_LPF[i] = 0.0;
+        lhs_fob_LPF_old[i] = lhs_fob_LPF[i];
+        rhs_fob_LPF[i] = 0.0;
+        rhs_fob_LPF_old[i] = rhs_fob_LPF[i];
+        tauExt_hat[i] = 0.0;
+        forceExt_hat[i] = 0.0;
+        forceExt_hat_old[i] = forceExt_hat[i];
+        forceExt_hat_old2[i] = forceExt_hat_old[i];
 
-    //double rhs_fob[NDOF_LEG] = { 0 }, rhs_fob_old[NDOF_LEG] = { 0 };
 
+        
+
+    }
+    
 };
 controller::~controller(){}
 
@@ -57,13 +87,15 @@ void controller::pid_gain_vel(double kp, double kd, double cut_off)
 
 };
 
-void controller::ctrlupdate()
+void controller::ctrl_update()
 {
     for (int i = 0; i < NDOF_LEG; i++)
     {
         //PID pos
+        error_old_pos[i] = error_pos[i];
         error_dot_old_pos[i] = error_dot_pos[i];
         //PID vel
+        error_old_vel[i] = error_vel[i];
         error_dot_old_vel[i] = error_dot_vel[i];
 
         //admittance
@@ -71,6 +103,8 @@ void controller::ctrlupdate()
         deltaPos_old[i] = deltaPos[i];
 
         //DOB
+        rhs_dob_old[i] = rhs_dob[i];
+        lhs_dob_old[i] = lhs_dob[i];
         rhs_dob_LPF_old[i] = rhs_dob_LPF[i];
         lhs_dob_LPF_old[i] = lhs_dob_LPF[i];
 
@@ -80,8 +114,6 @@ void controller::ctrlupdate()
         forceExt_hat_old2[i] = forceExt_hat_old[i];
         forceExt_hat_old[i] = forceExt_hat[i];
 
-        
-        
         
     }
 
@@ -139,23 +171,46 @@ void controller::admittanceCtrl(StateModel_* state_model, double m , double b, d
 
 void controller::DOBRW(StateModel_* state_model, double cut_off ,int flag)
 {
-    cut_off_dob = 1/(2*pi*cut_off);
+    cut_off_dob = cut_off;
     
+    //printf(" tau = %f ,%f \n", state_model->qddot_bi_tustin[0],state_model->qddot_bi_tustin[1]);
     lhs_dob = state_model->tau_bi;
-    lhs_dob_old = state_model->tau_bi_old;
-
     rhs_dob = state_model->Lamda_nominal_DOB * state_model->qddot_bi_tustin;
-    rhs_dob = state_model->Lamda_nominal_DOB * state_model->qddot_bi_tustin_old;
+    // printf(" tau_bi = %f ,%f \n", state_model->tau_bi[0],state_model->tau_bi[1]);
+    // printf(" qddot_bi_tustin = %f ,%f \n", state_model->qddot_bi_tustin[0],state_model->qddot_bi_tustin[1]);
+    // printf(" Lamda_nominal_DOB(0) = %f ,%f \n", state_model->Lamda_nominal_DOB(0,0),state_model->Lamda_nominal_DOB(0,1));
+    // printf(" Lamda_nominal_DOB(1) = %f ,%f \n", state_model->Lamda_nominal_DOB(1,0),state_model->Lamda_nominal_DOB(1,1));
     
+    if (state_model->time < 0.00001)
+    {
+        // printf(" tau_bi = %f ,%f \n", state_model->tau_bi[0],state_model->tau_bi[1]);
+        // printf(" qddot_bi_tustin = %f ,%f ", state_model->qddot_bi_tustin[0],state_model->qddot_bi_tustin[1]);
+        // printf(" qddot_bi = %f ,%f \n", state_model->qddot_bi[0],state_model->qddot_bi[1]);
+        //printf(" Lamda_nominal_DOB(0) = %f ,%f ", state_model->Lamda_nominal_DOB(0,0),state_model->Lamda_nominal_DOB(0,1));
+        //printf(" Lamda_nominal_DOB(1) = %f ,%f \n", state_model->Lamda_nominal_DOB(1,0),state_model->Lamda_nominal_DOB(1,1));
+        //printf("rhs_dob: %f, rhs_dob_old: %f, rhs_dob_LPF: %f, rhs_dob_LPF_old: %f, cut_off_dob: %f\n", rhs_dob[0], rhs_dob_old[0], rhs_dob_LPF[0],rhs_dob_LPF_old[0], cut_off_dob);
+        //printf("lhs_dob: %f, lhs_dob_old: %f, lhs_dob_LPF: %f, lhs_dob_LPF_old: %f, cut_off_dob: %f\n", lhs_dob[0], lhs_dob_old[0], lhs_dob_LPF[0],lhs_dob_LPF_old[0], cut_off_dob);
+
+    }
+
     if (flag == true)
     {
         for (int i = 0; i < NDOF_LEG; i++)
         {
-            lhs_dob_LPF[i] = lowpassfilter(lhs_dob[i], lhs_dob_old[i], lhs_dob_LPF_old[i], cut_off_dob);
-            rhs_dob_LPF[i] = lowpassfilter(rhs_dob[i], rhs_dob_old[i], rhs_dob_LPF_old[i], cut_off_dob);
-
-            tauDist_hat[i] = -rhs_dob_LPF[i] + lhs_dob_LPF[i];
+            lhs_dob_LPF[i] = lowpassfilter(lhs_dob[i], lhs_dob_old[i], lhs_dob_LPF_old[i], cut_off_dob); 
+            rhs_dob_LPF[i] = lowpassfilter(rhs_dob[i], rhs_dob_old[i], rhs_dob_LPF_old[i], cut_off_dob); 
+            // lhs_dob_LPF[i] = Highpassfilter(lhs_dob[i], lhs_dob_old[i], , cut_off_dob); 
+            // //rhs_dob_LPF[i] = Highpassfilter(rhs_dob[i], rhs_dob_old[i], 0, cut_off_dob);
+            // rhs_dob_LPF[i] = (Ts * (rhs_dob[i] + rhs_dob_old[i])- (Ts - 2 * time_const)*rhs_dob_LPF_old[i] ) / (Ts + 2 * time_const); //
+            tauDist_hat[i] = lhs_dob_LPF[i] - rhs_dob_LPF[i];
         }
+        //printf("rhs_dob: %f, rhs_dob_old: %f, rhs_dob_LPF_old: %f, time_const: %f\n", rhs_dob[0], rhs_dob_old[0], rhs_dob_LPF_old[0], time_const);
+        //printf(" rhs_dob = %f ,%f \n", rhs_dob[0],rhs_dob[1]);
+        //printf(" rhs_dob_old = %f ,%f \n", rhs_dob_old[0],rhs_dob_old[1]);
+        //printf(" rhs_dob_LPF = %f ,%f \n", rhs_dob_LPF[0],rhs_dob_LPF[1]);
+        //printf(" rhs_dob_LPF_old = %f ,%f \n", rhs_dob_LPF_old[0],rhs_dob_LPF_old[1]);
+        // printf(" cut_off_dob = %f \n", cut_off_dob);
+
 
     }
     else
@@ -163,14 +218,17 @@ void controller::DOBRW(StateModel_* state_model, double cut_off ,int flag)
         for (int i = 0; i < NDOF_LEG; i++)
             tauDist_hat[i] = 0;
     }
+    printf(" tauDist_hat = %f ,%f \n", tauDist_hat[0],tauDist_hat[1]);
     state_model->tau_bi = state_model->tau_bi + tauDist_hat;
 
 }; // Rotating Workspace DOB
 
 void controller::FOBRW(StateModel_* state_model, double cut_off)
 {
-    cut_off_fob = 1/(2*pi*cut_off);
+    cut_off_fob = 2*pi*cut_off;
     
+    // Corioli & Gravity term 만들어 놓음 필요하면 쓰면 됩니닷
+
     rhs_fob = state_model->Lamda_nominal_FOB * state_model->qddot_bi_tustin_old;
     rhs_fob_old = state_model->Lamda_nominal_FOB * state_model->qddot_bi_tustin;
 
@@ -180,12 +238,13 @@ void controller::FOBRW(StateModel_* state_model, double cut_off)
         rhs_fob_LPF[i] = lowpassfilter(rhs_fob[i], rhs_fob_old[i], rhs_fob_LPF_old[i], cut_off_fob);
 
         tauExt_hat[i] = rhs_fob_LPF[i] - lhs_fob_LPF[i];
-        //lowpassfilter(est_torque_ext[i], est_torque_ext_old[i], &torque_LPF[i], &torque_LPF_old[i], cutoff_freq);
+
     }
     forceExt_hat = state_model->jacbRW_trans_inv * tauExt_hat;
     
     
          
 } // Rotating WorkspaceForce Observer
+
 
 

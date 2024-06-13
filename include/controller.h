@@ -4,8 +4,8 @@
 #include "globVariable.h"
 #include "kinematics.h"
 #include "trajectory.h"
-#include "filter.h"
 #include <mujoco/mujoco.h> //Caution Crash
+#include "filter.h"
 
 //전역변수로 Leg_num 있어야함, PID제어기 몇개 인지도 있어야함
 
@@ -25,14 +25,14 @@ private:
     Vector2d error_dot_old_pos;
 
     // Vel_PID
-    double Kp_vel[NDOF_LEG]; // [Leg_num][dimension] ->ex) [RL][r,theta]
-    double Kd_vel[NDOF_LEG];
+    Vector2d Kp_vel; // [Leg_num][dimension] ->ex) [RL][r,theta]
+    Vector2d Kd_vel;
     double cut_off_D_vel;
-    double PID_output_vel[NDOF_LEG];
-    double error_vel[NDOF_LEG];
-    double error_old_vel[NDOF_LEG];
-    double error_dot_vel[NDOF_LEG];
-    double error_dot_old_vel[NDOF_LEG];
+    Vector2d PID_output_vel;
+    Vector2d error_vel;
+    Vector2d error_old_vel;
+    Vector2d error_dot_vel;
+    Vector2d error_dot_old_vel;
 
     //Admittance
     double ad_M;
@@ -43,10 +43,10 @@ private:
     double deltaPos_old2[NDOF_LEG];
 
     //DOB
-    Vector2d lhs_dob;
-    Vector2d lhs_dob_old;
     Vector2d rhs_dob;
     Vector2d rhs_dob_old;
+    Vector2d lhs_dob;
+    Vector2d lhs_dob_old;
     double lhs_dob_LPF[NDOF_LEG];
     double lhs_dob_LPF_old[NDOF_LEG];
     double rhs_dob_LPF[NDOF_LEG];
@@ -80,30 +80,10 @@ public:
     void admittanceCtrl(StateModel_* state_model, double m, double b, double k, int flag);
     void DOBRW(StateModel_* state_model, double cut_off ,int flag);
     void FOBRW(StateModel_* state_model, double cut_off);
-    void ctrlupdate(); // 이걸 사용할지에 대해서 생각해보기
-
-    //PID 어떻게 짜줄 것인지 설계 해줘야한다.
+    void ctrl_update(); // 이걸 사용할지에 대해서 생각해보기
     
 
 };
-
-
-
-// // Coriolis & Gravity -> 이 항들은 kinematics로 옮겨야함
-    // double h[NDOF_LEG] = { 0 }, h_old[NDOF_LEG] = { 0 };
-
-    // h[0] = -param_model->m_shank * param_model->d_shank * param_model->L * sin(state_model->q[1]) * pow(state_model->qdot_bi[1], 2)
-    //     - g * (param_model->m_thigh * param_model->d_thigh + param_model->m_shank * param_model->L) * cos(state_model->q_bi[0]);
-    // h_old[0] = -param_model->m_shank * param_model->d_shank * param_model->L * sin(state_model->q_old[1]) * pow(state_model->qdot_bi_old[1], 2)
-    //     - g * (param_model->m_thigh * param_model->d_thigh + param_model->m_shank * param_model->L) * cos(state_model->q_bi_old[0]);
-
-    // h[1] = param_model->m_shank * param_model->d_shank * param_model->L * sin(state_model->q[1]) * pow(state_model->qdot_bi[0], 2)
-    //     - g * param_model->m_shank * param_model->d_shank * cos(state_model->q_bi[1]);
-    // h_old[1] = param_model->m_shank * param_model->d_shank * param_model->L * sin(state_model->q_old[1]) * pow(state_model->qdot_bi_old[0], 2)
-    //     - g * param_model->m_shank * param_model->d_shank * cos(state_model->q_bi_old[1]);
-    
-
-    // //h[0] = h[0] - h[1];
 
 
 #endif // !__CONTROLLER_H__

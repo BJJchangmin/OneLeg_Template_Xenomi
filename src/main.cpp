@@ -22,11 +22,9 @@ mjvFigure figTrunkState;    // Trunk state plot
 
 double simEndtime = 100;	// Simulation End Time
 StateModel_  state_Model_FL;
-
-controller ctrl_FL;
+controller ctrl_FL; // other class is in main loop
 kinematics kin_FL;
 trajectory tra_FL;
-
 
 
 /***************** Main Controller *****************/
@@ -34,22 +32,30 @@ void mycontroller(const mjModel* m, mjData* d)
 {
    
     /* Controllers */
-    int flag_DOB = 0;           // flag for switching ON/OFF RWDOB
+    int flag_DOB = 1;           // flag for switching ON/OFF RWDOB
     int flag_admitt = 0;        // flag for switching ON/OFF admittance control
     double time_run = d->time;
     
     
     //admittanceCtrl(&param_Model_FL, &param_Tuning_FL, &state_Model_FL, flag_admitt);    // Admittance control
-    
+    ctrl_FL.pid_gain_pos(200, 10, 150); //(kp,kd,freq)
     state_Model_FL.tau_bi = state_Model_FL.jacbRW_trans * ctrl_FL.PID_pos(&state_Model_FL); // RW position feedback
-    //Feedforward in here
-
-    ctrl_FL.DOBRW(&state_Model_FL, 150, flag_DOB); // Rotating Workspace Disturbance Observer (RWDOB)
-    ctrl_FL.FOBRW(&state_Model_FL, 150); // Rotating Workspace Force Observer (RWFOB)
     
-   // Torque input
+    //printf(" tau = %f ,%f \n", state_Model_FL.tau_bi[0], state_Model_FL.tau_bi_old[0]); 
+    //Feedforward in here
+    if (d->time > 0.0003)
+    {
+    }
+
+    ctrl_FL.DOBRW(&state_Model_FL, 150, flag_DOB);// Rotating Workspace Disturbance Observer (RWDOB)
+
+    //printf(" tau = %f ,%f \n", state_Model_FL.Lamda_nominal_DOB(0,0), state_Model_FL.Lamda_nominal_DOB(0,1));
+    //printf(" tau = %f ,%f \n", state_Model_FL.Lamda_nominal_DOB(1,0), state_Model_FL.Lamda_nominal_DOB(1,1));
+    ctrl_FL.FOBRW(&state_Model_FL, 30); // Rotating Workspace Force Observer (RWFOB)
+    
+   // Torque input Biarticular
     d->ctrl[0] = state_Model_FL.tau_bi[0] + state_Model_FL.tau_bi[1] ;
-    d->ctrl[1] = state_Model_FL.tau_bi[1] ;
+    d->ctrl[1] = state_Model_FL.tau_bi[1];// + 0.3*sin(time_run);
         
     
 
@@ -115,14 +121,26 @@ int main(int argc, const char** argv)
     cam.lookat[0] = arr_view[3];
     cam.lookat[1] = arr_view[4];
     cam.lookat[2] = arr_view[5];
+    
     fid = fopen(datapath, "w");
     init_save_data();
 
-   
-
+    
     // Initialization
     mju_copy(d->qpos, m->key_qpos + 0 * m->nq, m->nq);
-    kin_FL.model_param_cal(m, d, &state_Model_FL); // state init is before. Caution Error. 
+    // d->qpos[1] = pi/4;
+    // d->qpos[2] = pi/2;
+    // d->qpos[1] = pi/2;
+    // d->qpos[2] = pi/4;
+    
+    //printf(" jacbRW_trans(1) = %f ,%f \n", state_Model_FL.q[1] ,state_Model_FL.q[1] );
+    //printf(" jacbRW_trans(1) = %f ,%f \n", state_Model_FL.jacbRW(1,0),state_Model_FL.jacbRW(1,1));
+    
+    
+    kin_FL.model_param_cal(m, d, &state_Model_FL); // state init is before. Caution Error.
+    kin_FL.state_init(m,d, &state_Model_FL);
+    // printf(" Lamda_nominal_DOB(1) = %f ,%f \n", state_Model_FL.Lamda_nominal_DOB(0,0),state_Model_FL.Lamda_nominal_DOB(0,1)); 
+    // printf(" Lamda_nominal_DOB(1) = %f ,%f \n", state_Model_FL.Lamda_nominal_DOB(1,0),state_Model_FL.Lamda_nominal_DOB(1,1));
     
     //Because of constructure. 
     //kin_FL.state_init(m, d, &state_Model_FL, &param_Model_FL);
@@ -148,7 +166,7 @@ int main(int argc, const char** argv)
         while (d->time - simstart < 1.0 / 60.0)
         {
             /* Trajectory Generation */
-            int cmd_motion_type = 5;
+            int cmd_motion_type = 0;
             int mode_admitt = 1;
             
             if (cmd_motion_type == 0)   // Squat
@@ -160,15 +178,32 @@ int main(int argc, const char** argv)
                 tra_FL.Hold(&state_Model_FL);  // Hold stance
                 
             }
-
+            
             kin_FL.sensor_measure(m, d, &state_Model_FL); // get joint sensor data & calculate biarticular angles
+
             kin_FL.model_param_cal(m, d,&state_Model_FL); // calculate model parameters
             kin_FL.jacobianRW(&state_Model_FL);            // calculate RW Jacobian
+            
+            if (d->time < 10)
+            {
+                //printf("ref: %f \n", state_Model_FL.posRW_ref[1]);
+                //printf(" qddot_bi_tustin(0) = %f ,%f ", state_Model_FL.qddot_bi_tustin[0],state_Model_FL.qddot_bi_tustin[1]);
+                //printf(" qddot_bi(1) = %f ,%f \n", state_Model_FL.qddot_bi[0],state_Model_FL.qddot_bi[1]);
+    
+            }
+            
+            
             kin_FL.fwdKinematics_cal(&state_Model_FL);     // calculate RW Kinematics
            
             mj_step(m, d);
            
-            kin_FL.state_update(&state_Model_FL); 
+            kin_FL.state_update(&state_Model_FL);
+            ctrl_FL.ctrl_update();
+            
+            // Vector2d check_old; 
+            // Vector2d check = lowpassfilter(state_Model_FL.tau_bi,state_Model_FL.tau_bi_old,check_old,100);
+            // check_old = check;
+            // printf("check: %f \n", check[0]);
 
         }
 

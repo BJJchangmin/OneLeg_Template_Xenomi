@@ -1,64 +1,6 @@
 #include "kinematics.h"
 
-
-kinematics::kinematics(const mjModel* m, mjData* d, StateModel_* state_model)
-{
-    state_model->q[0] = d->qpos[1];
-    state_model->q[1] = d->qpos[2];
-
-    state_model->q_bi[0] = d->qpos[1];
-    state_model->q_bi[1] = d->qpos[1] + d->qpos[2];
-
-    // RW coordinates initialization
-    state_model->r0 = 2 * L * cos((state_model->q_bi[1] - state_model->q_bi[0]) / 2);
-
-    state_model->posRW[0] = 2 * L * cos((state_model->q_bi[1] - state_model->q_bi[0]) / 2);
-    state_model->posRW[1] = (state_model->q_bi[0] + state_model->q_bi[1]) / 2;
-
-    state_model->posRW_ref[0] = 2 * L * cos((state_model->q_bi[1] - state_model->q_bi[0]) / 2);
-    state_model->posRW_ref[1] = (state_model->q_bi[0] + state_model->q_bi[1]) / 2;
-
-
-    state_model->touch_sensor = 0;
-
-
-    //printf("%f \n", state_model->r0);
-    for (int i = 0; i < NDOF_LEG; i++)
-    {
-        // Joint coordinates [k-1] values
-        state_model->q_bi_old[i] = state_model->q_bi[i];
-
-        state_model->qdot_bi[i] = 0.0;
-        state_model->qdot_bi_tustin[i] = 0.;
-        state_model->qdot_bi_tustin_old[i] = state_model->qdot_bi_tustin[i];
-
-        state_model->qddot_bi[i] = 0.;
-        state_model->qddot_bi_tustin[i] = 0.;
-        state_model->qddot_bi_tustin_old[i] = state_model->qddot_bi_tustin[i];
-
-        state_model->tau_bi[i] = 0.;
-        state_model->tau_bi_old[i] = state_model->tau_bi[i];
-
-        // RW coordinates [k-1] values
-        state_model->posRW_old[i] = state_model->posRW[i];
-        state_model->posRW_ref_old[i] = state_model->posRW_ref[i];
-        state_model->posRW_ref_old2[i] = state_model->posRW_ref_old[i];
-
-        state_model->velRW[i] = .0;
-        state_model->velRW_old[i] = state_model->velRW[i];
-        state_model->velRW_ref[i] = 0.;
-        state_model->velRW_ref_old[i] = state_model->velRW_ref[i];
-
-
-        state_model->ctrl_input_RW[i] = 0.;
-        state_model->ctrl_input_RW_old[i] = state_model->ctrl_input_RW[i];
-
-
-        // Mg Trajectory
-        state_model->tau_ff[i]=0.;
-    }
-    // printf("%f, %f \n", state_model->q_bi_old[0], state_model->q_bi_old[1]);
-};
+kinematics::kinematics(){};
 
 kinematics::~kinematics(){};
 
@@ -84,10 +26,10 @@ void kinematics::state_update(StateModel_* state_model)
 
         // control input
         state_model->ctrl_input_RW_old[i] = state_model->ctrl_input_RW[i];
-        state_model->tau_bi_old[i] = state_model->tau_bi[i];
-
-        
+        state_model->tau_bi_old[i] = state_model->tau_bi[i];   
     }
+
+    state_model->H_old = state_model->H;
     //printf("%f, %f \n", state_model->lhs_fob_LPF[0], state_model->lhs_fob_LPF_old[0]);
 };
 
@@ -161,25 +103,32 @@ void kinematics::model_param_cal(const mjModel* m, mjData* d, StateModel_* state
     
     state_model->Lamda_nominal_DOB = state_model->jacbRW_trans*Inertia_DOB*state_model->jacbRW;
     
+    //Coriolis & Gravity
+    H[0] = -m_shank * d_shank * L * sin(state_model->q[1]) * pow(state_model->qdot_bi[1], 2)
+         - g * (m_thigh * d_thigh + m_shank * L) * cos(state_model->q_bi[0]);
+
+    H[1] = m_shank * d_shank * L * sin(state_model->q[1]) * pow(state_model->qdot_bi[0], 2)
+         - g * m_shank * d_shank * cos(state_model->q_bi[1]);
 
 }; // param_model parameter
 
 void kinematics::sensor_measure(const mjModel* m, mjData* d, StateModel_* state_model)
 {
+    cut_off_cal = 1/(2*pi*150);
     /*** (Serial) Joint position ***/
-    // state_model->q[0] = d->qpos[0];  // (relative) HFE angle
-    // state_model->q[1] = d->qpos[1];  // (relative) KFE angle
+    state_model->q[0] = d->qpos[1];  // (relative) HFE angle
+    state_model->q[1] = d->qpos[2];  // (relative) KFE angle
 
-    state_model->q[0] = d->sensordata[6]; // (relative) HFE angle
-    state_model->q[1] = d->sensordata[7]; // (relative) KFE angle
+    // state_model->q[0] = d->sensordata[6]; // (relative) HFE angle
+    // state_model->q[1] = d->sensordata[7]; // (relative) KFE angle
     state_model->touch_sensor = d->sensordata[8];
 
     /*** Biarticular Transformation ***/
-    // state_model->q_bi[0] = d->qpos[0];              // (absolute) HFE angle
-    // state_model->q_bi[1] = d->qpos[0] + d->qpos[1]; // (absolute) KFE angle
+    state_model->q_bi[0] = d->qpos[1];              // (absolute) HFE angle
+    state_model->q_bi[1] = d->qpos[1] + d->qpos[2]; // (absolute) KFE angle
 
-    state_model->q_bi[0] = d->sensordata[6];                    // (absolute) HFE angle
-    state_model->q_bi[1] = d->sensordata[6] + d->sensordata[7]; // (absolute) KFE angle
+    // state_model->q_bi[0] = d->sensordata[6];                    // (absolute) HFE angle
+    // state_model->q_bi[1] = d->sensordata[6] + d->sensordata[7]; // (absolute) KFE angle
 
     // printf("q1 : %f, q2 : %f \n", d->qpos[0], d->qpos[1]);
     // printf("qm : %f, qb : %f \n\n", q_bi[0], q_bi[1]);
@@ -214,15 +163,13 @@ void kinematics::sensor_measure(const mjModel* m, mjData* d, StateModel_* state_
 void kinematics::jacobianRW(StateModel_* state_model)
 {
     /*** Rotating Workspace ***/
-    state_model->jacbRW(0,0) = L * sin(state_model->q[1] / 2);
+    state_model->jacbRW(0,0) =  L * sin(state_model->q[1] / 2);
     state_model->jacbRW(0,1) = -L * sin(state_model->q[1] / 2);
-    state_model->jacbRW(1,0) = L * cos(state_model->q[1] / 2);
-    state_model->jacbRW(1,1) = L * cos(state_model->q[1] / 2);
-    // printf("%f %f \n", JacobianRW[0][0], JacobianRW[0][1]);
-    // printf("%f %f \n\n", JacobianRW[1][0], JacobianRW[1][1]);
+    state_model->jacbRW(1,0) =  L * cos(state_model->q[1] / 2);
+    state_model->jacbRW(1,1) =  L * cos(state_model->q[1] / 2);
+    
     state_model->jacbRW_trans = state_model->jacbRW.transpose(); 
 
-    // cout << state_model->jacbRW_trans(2,0) << endl;
     state_model->jacbRW_trans_inv = state_model->jacbRW_trans.inverse();
 };
 
@@ -233,4 +180,67 @@ void kinematics::fwdKinematics_cal(StateModel_* state_model)
 
     state_model->velRW = state_model->jacbRW*state_model->qdot_bi_tustin;
     
+};
+
+void kinematics::state_init(const mjModel* m, mjData* d, StateModel_* state_model)
+{
+    state_model->q[0] = d->qpos[1];
+    state_model->q[1] = d->qpos[2];
+
+    state_model->q_bi[0] = d->qpos[1];
+    state_model->q_bi[1] = d->qpos[1] + d->qpos[2];
+
+    // RW coordinates initialization
+    state_model->r0 = 2 * L * cos((state_model->q_bi[1] - state_model->q_bi[0]) / 2);
+
+    state_model->posRW[0] = 2 * L * cos((state_model->q_bi[1] - state_model->q_bi[0]) / 2);
+    state_model->posRW[1] = (state_model->q_bi[0] + state_model->q_bi[1]) / 2;
+
+    state_model->posRW_ref[0] = 2 * L * cos((state_model->q_bi[1] - state_model->q_bi[0]) / 2);
+    state_model->posRW_ref[1] = (state_model->q_bi[0] + state_model->q_bi[1]) / 2;
+
+
+    state_model->touch_sensor = 0;
+
+    state_model->Lamda_nominal_DOB(0,0)= 0.0;
+    state_model->Lamda_nominal_DOB(0,1)= 0.0;
+    state_model->Lamda_nominal_DOB(1,0)= 0.0;
+    state_model->Lamda_nominal_DOB(1,1)= 0.0;
+
+    //printf("%f \n", state_model->r0);
+    for (int i = 0; i < NDOF_LEG; i++)
+    {
+        // Joint coordinates [k-1] values
+        state_model->q_bi_old[i] = state_model->q_bi[i];
+
+        state_model->qdot_bi[i] = 0.0;
+        state_model->qdot_bi_tustin[i] = 0.;
+        state_model->qdot_bi_tustin_old[i] = state_model->qdot_bi_tustin[i];
+
+        state_model->qddot_bi[i] = 0.;
+        state_model->qddot_bi_tustin[i] = 0.;
+        state_model->qddot_bi_tustin_old[i] = state_model->qddot_bi_tustin[i];
+
+        state_model->tau_bi[i] = 0.;
+        state_model->tau_bi_old[i] = state_model->tau_bi[i];
+
+        // RW coordinates [k-1] values
+        state_model->posRW_old[i] = state_model->posRW[i];
+        state_model->posRW_ref_old[i] = state_model->posRW_ref[i];
+        state_model->posRW_ref_old2[i] = state_model->posRW_ref_old[i];
+
+        state_model->velRW[i] = .0;
+        state_model->velRW_old[i] = state_model->velRW[i];
+        state_model->velRW_ref[i] = 0.;
+        state_model->velRW_ref_old[i] = state_model->velRW_ref[i];
+
+
+        state_model->ctrl_input_RW[i] = 0.;
+        state_model->ctrl_input_RW_old[i] = state_model->ctrl_input_RW[i];
+
+
+        // Mg Trajectory
+        state_model->tau_ff[i]=0.;
+    }
+    // printf("%f, %f \n", state_model->q_bi_old[0], state_model->q_bi_old[1]);
 };

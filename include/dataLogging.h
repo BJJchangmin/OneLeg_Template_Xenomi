@@ -20,11 +20,8 @@ void init_save_data()
     
     fprintf(fid, "t, ");
     fprintf(fid, "r_ref, qr_ref, r_act, qr_act, ");
-    fprintf(fid, "out_acc, out_acc_old, out_acc_old2, ydR_act,");
-    fprintf(fid, "fxR_hat, fyR_hat, ");
-    fprintf(fid, "grf_x, grf_y, grf_z, ");
-    fprintf(fid, "touch, ");
-    fprintf(fid, "trunk_vel_y ");
+    fprintf(fid, "tau[0], tau[1]");
+    
     
     // Don't remove the newline
     fprintf(fid, "\n");
@@ -51,21 +48,12 @@ void save_data(const mjModel* m, mjData* d, StateModel_* state_model)
     fprintf(fid, "%f, ", d->time);
     
     fprintf(fid, "%f, %f, %f, %f, ", state_model->posRW_ref[0], state_model->posRW_ref[1], state_model->posRW[0], state_model->posRW[1]);
-    fprintf(fid, "%f, %f, %f, %f, ", state_model->out_acc, state_model->out_acc_old, state_model->out_acc_old2, d->sensordata[7]);
+    fprintf(fid, "%f, %f ", state_model->tau_bi[0], state_model->tau_bi[1]);
 
     
     
-    fprintf(fid, "%f, %f, ", state_model->forceExt_hat[0], state_model->forceExt_hat[1]); // forceEXT[0]�� r���� , ī�׽þƳ߼� y����
-    
-    fprintf(fid, "%f, %f, %f, ", grf_r, grf_thetar, grf_z);
-    
-    fprintf(fid, "%f, ", touch);
-
-    fprintf(fid, "%f ", state_model->velRW[0]);
-    
-    
-    // Don't remove the newline
-    fprintf(fid, "\n");
+    // // Don't remove the newline
+    // fprintf(fid, "\n");
 
 
 }

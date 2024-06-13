@@ -9,7 +9,7 @@ CXXFLAGS = -std=c++11
 CFLAGS = -std=c11 
 
 # header files directory
-INCDIR = -I./include -I../../include
+INCDIR = -I./include -I../../include -I/usr/include/eigen3
 # -IC:/myproject/mujoco/mujoco-2.2.1-windows-x86_64/include
 
 # Library paths

@@ -5,6 +5,7 @@
 #include "filter.h"
 #include <mujoco/mujoco.h> //Caution Crash
 
+
 class kinematics
 {
 
@@ -42,9 +43,11 @@ private:
     Matrix2d MatInertia_RW;
     Matrix2d Inertia_DOB;
 
+    Vector2d H;
+    Vector2d H_old;
 
 public:
-    kinematics(const mjModel* m, mjData* d, StateModel_* state_model); //생성자
+    kinematics(); //생성자
     ~kinematics(); //소멸자
     
     void state_update(StateModel_* state_model);
@@ -52,6 +55,7 @@ public:
     void sensor_measure(const mjModel* m, mjData* d, StateModel_* state_model);
     void jacobianRW(StateModel_* state_model);
     void fwdKinematics_cal(StateModel_* state_model);
+    void state_init(const mjModel* m, mjData* d, StateModel_* state_model);
     
     //void state_init(const mjModel* m, mjData* d, StateModel_* state_model, ParamModel_* param_model); -> subtitude param_model to kinematic Class variable
 

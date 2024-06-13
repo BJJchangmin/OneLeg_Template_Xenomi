@@ -79,6 +79,8 @@ struct StateModel_
     double cut_off_cal;
     Matrix2d Lamda_nominal_DOB;
     Matrix2d Lamda_nominal_FOB;
+    Vector2d H; // Coriolis & Gravity term
+    Vector2d H_old;
 
 };
 
